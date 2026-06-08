@@ -1,147 +1,100 @@
-# ReelDigest
+# ReelDigest — Claude Code instructions
 
-A fully local Instagram Reel and carousel post summariser. Downloads posts
-(including image-only carousels), transcribes audio (Whisper), reads on-screen
-text (EasyOCR), and summarises with a local LLM (Ollama). Works for any topic —
-medical, fitness, finance, tech, cooking, etc. Exposed as a REST API and a
-Telegram bot. Runs entirely on your own machine.
+## Project Overview
 
-## How to run
+ReelDigest is a fully-local Instagram Reel and carousel summariser. Downloads
+posts (including image-only carousels), transcribes audio (Whisper), reads
+on-screen text (EasyOCR), and summarises with a local LLM (Ollama). Exposed
+as a FastAPI REST API and a Telegram bot. Runs entirely on the user's machine
+— no cloud APIs.
 
-```powershell
-# First time only: install dependencies
-.\venv\Scripts\python.exe -m pip install -r requirements.txt
+For full architecture and usage details, see `README.md`. This file is
+specifically for working preferences, conventions, and Git rules.
 
-# Every time: start the server (loads .env automatically)
-.\start.ps1
-```
+## Architecture Map
 
-The server starts at `http://0.0.0.0:8000`. The Telegram bot starts
-automatically if `TELEGRAM_TOKEN` is set in `.env`.
+- **`reel_summarizer.py`** — core pipeline: download → transcribe (Whisper) → OCR
+  (EasyOCR) → summarise (Ollama). Two-stage download: yt-dlp first, Instagram
+  API fallback for image-only carousels.
+- **`server.py`** — FastAPI server, async job queue, worker thread. Loads
+  models once (`_load_models`). Hardcoded `device="cpu"` due to CUDA/cuDNN
+  mismatch.
+- **`bot.py`** — Telegram bot. Starts via FastAPI lifespan in the same process
+  as the server. Commands: /start, /last, /status, /history.
+- **`start.ps1`** — launcher: loads `.env` and runs `server.py` with venv Python.
+- **`tests/`** — unittest-based test suite.
 
-## Key files
+## Working Preferences
 
-| File | Purpose |
+- **Plan before touching.** For anything non-trivial, propose a plan and wait
+  for approval before editing.
+- **Read first.** Always read relevant files before writing. Match the
+  existing code style.
+- **Small, reviewable edits.** Don't rewrite whole files. Don't clean up
+  surrounding code unless asked.
+- **Don't add dependencies without flagging them first.** This project keeps
+  dependencies minimal — every new package needs a real justification.
+- When uncertain, ask. Don't guess on architecture or priorities.
+- Default to no comments. Only add one when the WHY is non-obvious — a hidden
+  constraint, a workaround, a subtle invariant.
+
+## Rules and Conventions
+
+- **Never commit `.env` or any API key.** `.gitignore` covers it but verify
+  before every commit.
+- **Never commit `instagram_cookies.txt` or any `*_cookies.txt` file.** These
+  contain real auth tokens.
+- Runtime artifacts (`reel_summaries*.txt`, `*.mp4`, `reels_*/`) stay
+  gitignored. Don't add them to tracked files.
+- Always use the venv Python (`.\venv\Scripts\python.exe`), not the system
+  Python. The system Python is missing required packages.
+- `device="cpu"` is hardcoded in `server.py:_load_models` for a reason
+  (CUDA/cuDNN mismatch). Don't change to "cuda" without resolving the
+  underlying driver issue.
+- `OLLAMA_NUM_GPU=0` in `.env` is required on this hardware (Vulkan OOM on
+  the RTX 4060). Don't remove unless GPU inference is verified working.
+
+## Git Workflow
+
+1. After every completed task, run `git status` and propose a commit plan
+   showing which files go in which commit, with clear messages.
+2. **Wait for explicit approval before committing.**
+3. Group related changes logically — not one mega-commit unless the work is
+   genuinely a single concern.
+4. Commit messages: describe what changed and why. "Add cookies-based auth for
+   Instagram downloads" not "updates". Brief but specific.
+5. Flag uncertainty in commit messages: "WIP: X — runs but not yet tested".
+6. After commits are approved, ask whether to push to GitHub.
+7. **Do NOT add `Co-Authored-By: Claude` trailers, `🤖 Generated with Claude
+   Code` footers, or any other AI-tool attribution to commit messages.**
+   Commit messages should describe what changed and why, with no AI-tool
+   metadata.
+8. **Never `git push --force`, `git reset --hard`, or `git rebase`** without
+   explicit instruction in the current session.
+
+## Quirks Worth Knowing
+
+- **yt-dlp image carousel bug.** yt-dlp raises "No video formats found!" for
+  image-only carousel posts. Handled by Stage 2 fallback in
+  `_fetch_instagram_images` calling Instagram's private API directly. Don't
+  remove the fallback even if yt-dlp seems to work for a particular URL.
+- **Instagram shortcode → media ID conversion** uses Instagram's custom base-64
+  alphabet (`A-Za-z0-9-_`). Not standard base64. Documented in
+  `reel_summarizer.py`.
+- **Cookies expire periodically** (weeks–months). User must re-export from the
+  browser extension. If downloads start failing with auth errors, this is the
+  first thing to check.
+- **CUDA/cuDNN/Vulkan are a known mess on this machine.** Multiple workarounds
+  exist (`device="cpu"`, `OLLAMA_NUM_GPU=0`). Don't try to "fix" individual
+  pieces — the whole GPU stack needs resolution together (Phase 4).
+
+## Current Priority Stack
+
+| Status | Item |
 |---|---|
-| `reel_summarizer.py` | Core pipeline: download → transcribe → OCR → summarise |
-| `server.py` | FastAPI server + async job queue + worker thread |
-| `bot.py` | Telegram bot (same process as server, starts via lifespan) |
-| `start.ps1` | Launcher: loads `.env` and runs server with venv Python |
-| `.env.example` | All config options documented with defaults |
-| `instagram_cookies.txt` | Your Instagram session (see setup below — gitignored) |
-| `urls.txt` | Input for the CLI mode (one URL per line) |
-
-## Instagram authentication (required)
-
-Meta disabled anonymous API access. Every download now requires a valid
-Instagram session exported as a Netscape cookies file.
-
-**One-time setup:**
-
-1. Install the **"Get cookies.txt LOCALLY"** extension in Chrome or Edge
-2. Log in to `instagram.com` in that browser
-3. Click the extension icon, select `instagram.com`, click **Export**
-4. Save the file as `instagram_cookies.txt` in the project root
-5. Add to `.env`: `INSTAGRAM_COOKIES_FILE=instagram_cookies.txt`
-
-The cookies file is gitignored. Re-export when Instagram invalidates your
-session (usually weeks–months).
-
-## Environment / config
-
-Copy `.env.example` to `.env` and fill in:
-- `INSTAGRAM_COOKIES_FILE=instagram_cookies.txt` — required for all downloads
-- `TELEGRAM_TOKEN` — from @BotFather
-- `TELEGRAM_ALLOWED_USERS` — your Telegram user ID (get from @userinfobot)
-- `OLLAMA_NUM_GPU=0` — required on this machine (Vulkan OOM on GPU)
-
-## Download pipeline (two-stage)
-
-**Stage 1 — yt-dlp** handles video reels and video carousels (`format: best`).
-
-**Stage 2 — Instagram API fallback** (`_fetch_instagram_images`) kicks in when
-yt-dlp raises "No video formats found!" — a known yt-dlp extractor limitation
-for image-only carousel posts. It calls
-`instagram.com/api/v1/media/{media_id}/info/` directly with the session cookies
-to get slide image URLs and downloads them as `.jpg` files.
-
-The shortcode → numeric media ID conversion uses Instagram's base-64 alphabet:
-`ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_`
-
-## API
-
-```
-POST /summarize   { "url": "https://instagram.com/reel/..." }  → 202 { job_id }
-GET  /jobs/{id}   → { status, current_step, summary, elapsed_s, ... }
-GET  /jobs        → list all jobs (filter: ?status=done|failed|pending|processing)
-GET  /health      → server + model readiness
-```
-
-Supported URL patterns:
-- `instagram.com/reel/{shortcode}/` — video reel
-- `instagram.com/p/{shortcode}/` — photo post or image/video carousel
-- `instagram.com/p/{shortcode}/?img_index=N` — deep-link to a specific slide (whole carousel is still processed)
-
-## Telegram bot commands
-
-| Command | Description |
-|---|---|
-| `/start` | Welcome message and usage |
-| `/last` | Live status of your most recent job |
-| `/status` | Server health, model status, queue depth |
-| `/history` | Last 5 completed summaries |
-
-Send any Instagram URL directly to the bot to queue a job. You get a push
-notification when it finishes.
-
-## CLI mode (bypasses the server)
-
-```powershell
-.\venv\Scripts\python.exe reel_summarizer.py -i urls.txt -o reel_summaries.txt --device cpu --ollama-num-gpu 0
-```
-
-## Run tests
-
-```powershell
-.\venv\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-## Known issues / workarounds
-
-- **CUDA/cuDNN mismatch**: EasyOCR's bundled PyTorch doesn't match the installed
-  cuDNN. Workaround: `--device cpu` in CLI, hardcoded `device="cpu"` in
-  `server.py:_load_models`.
-- **Ollama Vulkan OOM**: Ollama tries to use the GPU via Vulkan and runs out of
-  VRAM. Workaround: `OLLAMA_NUM_GPU=0` in `.env` forces CPU inference.
-- **Always use the venv Python**: `python server.py` uses system Python (missing
-  packages). Use `.\start.ps1` or `.\venv\Scripts\python.exe server.py`.
-- **yt-dlp image carousel bug**: yt-dlp raises "No video formats found!" for
-  image-only carousel posts — handled automatically by Stage 2 fallback.
-
-## Hardware
-
-Currently running on **MSI Katana 15 B13 V** (i7-13620H, RTX 4060 8 GB,
-16 GB DDR5). Everything runs on CPU due to the CUDA/Vulkan issues above. Once
-the driver/library mismatch is resolved, GPU inference will significantly speed
-up Whisper and OCR.
-
-## Adding a new Telegram bot command
-
-1. Add a handler function `async def _cmd_name(update, ctx)` in `bot.py`
-2. Register it in `start()`: `_app.add_handler(CommandHandler("name", _cmd_name))`
-3. Restart the server
-
-## Phase roadmap
-
-- [x] Phase 1: FastAPI server + async job queue
-- [x] Phase 2: Telegram bot with push notifications
-- [x] Phase 3a: Instagram authentication (cookies) + image carousel support
-- [ ] Phase 3b: Tailscale setup (reach server from phone on any network)
-- [ ] Phase 4: Fix GPU inference (cuDNN / Vulkan issues on MSI Katana)
-- [ ] Phase 5: Profile analyser — given an Instagram (or YouTube) profile URL,
-      crawl all posts, run the summarise pipeline on each, then produce a
-      meta-analysis via LLM covering: content evolution timeline, engagement
-      pivot point, originality/novelty ranking per post (1–5 scale),
-      monetisation potential rating, and AI-replication feasibility assessment.
-      Planned as a standalone CLI script first, then optionally a Telegram
-      command (`/profile <username>`).
+| ✅ Done | Phase 1: FastAPI server + async job queue |
+| ✅ Done | Phase 2: Telegram bot with push notifications |
+| ✅ Done | Phase 3a: Instagram cookies auth + image carousel support |
+| ⏳ Pending | Phase 3b: Tailscale setup (phone access from any network) |
+| ⏳ Pending | Phase 4: Fix GPU inference (cuDNN / Vulkan issues) |
+| 🅿️ Parked | Phase 5: Profile analyser — crawl all posts on a profile, meta-summary |
