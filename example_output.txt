@@ -1,0 +1,27 @@
+# Instagram Reel Summaries - generated 2026-05-27 14:32
+#
+# NOTE: This is an ILLUSTRATIVE example showing the exact output format.
+# It was not produced from a live run (see README "Example run").
+# Your real reel_summaries.txt will look exactly like this.
+
+================================================================
+URL: https://www.instagram.com/reel/EXAMPLE1/
+----------------------------------------------------------------
+- Walks through building a local RAG (retrieval-augmented generation) chatbot that runs entirely offline.
+- Tools named: Ollama for the LLM, ChromaDB as the vector store, and the nomic-embed-text embedding model.
+- Key claim: keeping everything local avoids per-token API costs and keeps private documents off the cloud.
+- Steps shown on screen: pull the model, chunk the PDFs, embed and store the chunks, then query with similarity search.
+- On-screen code snippet uses LangChain's RetrievalQA chain to wire the retriever to the model.
+
+================================================================
+URL: https://www.instagram.com/reel/EXAMPLE2/
+----------------------------------------------------------------
+- Quick tip reel comparing prompt styles for code generation.
+- Argues that giving the model an explicit role plus input/output examples ("few-shot") beats a bare instruction.
+- Mentions that asking the model to "think step by step" improves multi-step reasoning tasks.
+- No specific tools or libraries are named; the content is general prompting advice.
+
+================================================================
+URL: https://www.instagram.com/reel/EXAMPLE3/
+----------------------------------------------------------------
+[SKIPPED: download failed - Requested content is not available, possibly a private account or removed reel.]

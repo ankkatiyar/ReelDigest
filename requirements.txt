@@ -1,0 +1,23 @@
+# Local Instagram Reel Summarizer - Python dependencies
+#
+# Install with:   pip install -r requirements.txt
+#
+# Note: easyocr pulls in PyTorch, so the first install is large
+# (roughly 2-3 GB) and may take several minutes. CPU-only users can
+# shrink this by installing the CPU-only torch wheel first:
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements.txt
+
+yt-dlp>=2024.8.0          # downloads public reels (no login)
+faster-whisper>=1.0.0     # local speech-to-text (CTranslate2 backend)
+easyocr>=1.7.0            # local on-screen text recognition (OCR)
+opencv-python-headless>=4.8.0   # frame sampling for OCR
+requests>=2.31.0          # talks to the local Ollama server
+
+# API server
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# Telegram bot
+python-telegram-bot>=20.7

@@ -1,0 +1,22 @@
+venv/
+.env
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# output files (user-generated, don't commit)
+reel_summaries*.txt
+*.mp4
+
+# temp dirs created during runs
+reels_*/
+
+# Instagram session cookies (contain auth tokens, never commit)
+instagram_cookies.txt
+*_cookies.txt
+
+# IDE
+.vscode/
+.idea/
+# Local URL list (real URLs - don't commit)
+urls.local.txt
