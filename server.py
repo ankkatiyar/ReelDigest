@@ -49,6 +49,7 @@ OLLAMA_MODEL   = os.getenv("OLLAMA_MODEL",    "mistral")
 OLLAMA_HOST    = os.getenv("OLLAMA_HOST",     "http://localhost:11434")
 OLLAMA_NUM_GPU = int(os.getenv("OLLAMA_NUM_GPU", "0"))   # 0 = CPU-only
 OCR_LANG       = [s.strip() for s in os.getenv("OCR_LANG", "en").split(",")]
+CAPTION_LANGS  = [s.strip() for s in os.getenv("CAPTION_LANGS", "en").split(",")]
 FRAME_INTERVAL = float(os.getenv("FRAME_INTERVAL", "2.0"))
 MAX_FRAMES     = int(os.getenv("MAX_FRAMES",     "60"))
 DIFF_THRESHOLD = float(os.getenv("DIFF_THRESHOLD", "8.0"))
@@ -178,12 +179,23 @@ def _run_job(job: Job) -> None:
 
         all_transcripts, all_ocr = [], []
 
-        for path in media_paths:
+        # YouTube: use existing captions if available, skipping Whisper entirely.
+        captions = ""
+        if rs.detect_platform(job.url) == "youtube":
             job.current_step = "transcribing"
-            if not rs.is_image(path):
-                t = rs.transcribe(_whisper_model, path)
-                if t:
-                    all_transcripts.append(t)
+            captions = rs.fetch_captions(
+                job.url, _temp_dir, langs=CAPTION_LANGS, timeout=DL_TIMEOUT,
+            )
+            if captions:
+                all_transcripts.append(captions)
+
+        for path in media_paths:
+            if not captions:
+                job.current_step = "transcribing"
+                if not rs.is_image(path):
+                    t = rs.transcribe(_whisper_model, path)
+                    if t:
+                        all_transcripts.append(t)
 
             job.current_step = "ocr"
             o = rs.extract_media_text(

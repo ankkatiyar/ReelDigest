@@ -462,6 +462,76 @@ def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None
 # Step 2: transcription
 # --------------------------------------------------------------------------
 
+class _SilentLogger:
+    def debug(self, msg): pass
+    def info(self, msg): pass
+    def warning(self, msg): pass
+    def error(self, msg): pass
+
+
+def _parse_vtt(path):
+    """Extract plain text from a WebVTT subtitle file, collapsing the rolling
+    duplicate lines that YouTube auto-captions produce (each cue repeats the
+    previous line plus a new word)."""
+    collected = []
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            line = raw.strip()
+            if (not line or "-->" in line or line.isdigit()
+                    or line.startswith(("WEBVTT", "NOTE", "Kind:", "Language:"))):
+                continue
+            line = re.sub(r"<[^>]+>", "", line).strip()   # strip inline tags
+            if not line:
+                continue
+            if collected:
+                last = collected[-1]
+                if line == last or line in last:
+                    continue
+                if last in line:                           # new line supersedes old
+                    collected[-1] = line
+                    continue
+            collected.append(line)
+    return " ".join(collected).strip()
+
+
+def fetch_captions(url, temp_dir, langs=("en",), timeout=30):
+    """Fetch existing subtitles/captions for a video via yt-dlp and return them
+    as plain text, or '' if none are available.
+
+    Lets YouTube videos skip Whisper entirely: the caption text already exists,
+    so we download and parse it instead of transcribing the audio on CPU.
+    Prefers human-uploaded subtitles, falls back to auto-generated."""
+    from yt_dlp import YoutubeDL
+
+    sub_dir = tempfile.mkdtemp(prefix="subs_", dir=temp_dir)
+    opts = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": list(langs),
+        "subtitlesformat": "vtt",
+        "outtmpl": os.path.join(sub_dir, "%(id)s.%(ext)s"),
+        "quiet": True,
+        "no_warnings": True,
+        "socket_timeout": timeout,
+        "logger": _SilentLogger(),
+    }
+    try:
+        with YoutubeDL(opts) as ydl:
+            ydl.extract_info(url, download=True)
+        for vtt in sorted(glob.glob(os.path.join(sub_dir, "*.vtt"))):
+            text = _parse_vtt(vtt)
+            if text:
+                log(f"    captions found ({len(text)} chars); skipping Whisper")
+                return text
+        return ""
+    except Exception as exc:
+        log(f"    no captions ({short_reason(exc)}); will transcribe with Whisper")
+        return ""
+    finally:
+        shutil.rmtree(sub_dir, ignore_errors=True)
+
+
 def transcribe(model, video_path):
     """Transcribe speech from the video. faster-whisper reads the audio
     stream directly from the mp4. Returns '' if there is no speech."""

@@ -104,6 +104,37 @@ class SourceUrlTest(unittest.TestCase):
         self.assertIsNone(rs.extract_url("no links here"))
 
 
+class VttCaptionTest(unittest.TestCase):
+    def test_parse_vtt_cleans_and_dedups_rolling_captions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "video.en.vtt"
+            path.write_text(
+                "WEBVTT\n"
+                "Kind: captions\n"
+                "Language: en\n"
+                "\n"
+                "00:00:00.000 --> 00:00:02.000\n"
+                "Hello and welcome\n"
+                "\n"
+                "00:00:02.000 --> 00:00:04.000\n"
+                "Hello and welcome to the show\n"          # supersedes the line above
+                "\n"
+                "00:00:04.000 --> 00:00:06.000\n"
+                "<c>today we discuss</c> stocks\n",         # inline tags stripped
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                rs._parse_vtt(str(path)),
+                "Hello and welcome to the show today we discuss stocks",
+            )
+
+    def test_parse_vtt_empty_when_only_headers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "empty.en.vtt"
+            path.write_text("WEBVTT\n\n", encoding="utf-8")
+            self.assertEqual(rs._parse_vtt(str(path)), "")
+
+
 class OutputAndRetryTest(unittest.TestCase):
     def test_write_entry_writes_one_complete_block(self):
         out = io.StringIO()
