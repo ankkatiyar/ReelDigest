@@ -6,7 +6,11 @@ __pycache__/
 
 # output files (user-generated, don't commit)
 reel_summaries*.txt
+reel_summaries*.csv
 *.mp4
+
+# summary archive (contains real reel content, never commit)
+*.db
 
 # temp dirs created during runs
 reels_*/

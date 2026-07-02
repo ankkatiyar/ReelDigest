@@ -38,6 +38,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
 import reel_summarizer as rs
+import storage
 
 # ---------------------------------------------------------------------------
 # Config  (env-var driven, defaults tuned for weak CPU hardware)
@@ -59,6 +60,8 @@ MAX_STORED_JOBS = int(os.getenv("MAX_STORED_JOBS", "200"))
 INSTAGRAM_COOKIES = os.getenv("INSTAGRAM_COOKIES_FILE", "").strip() or None
 PORT           = int(os.getenv("PORT", "8000"))
 HOST           = os.getenv("HOST", "0.0.0.0")
+SUMMARY_DB     = os.getenv("SUMMARY_DB",  "reeldigest.db")
+SUMMARY_CSV    = os.getenv("SUMMARY_CSV", "reel_summaries.csv")
 
 # ---------------------------------------------------------------------------
 # Job model
@@ -80,10 +83,14 @@ class Job:
     finished_at: Optional[str] = None
     # Internal — never serialised to the API response
     _notify:     Optional[Callable] = field(default=None, repr=False, compare=False)
+    _transcript: Optional[str] = field(default=None, repr=False, compare=False)
+    _ocr_text:   Optional[str] = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d.pop("_notify", None)
+        d.pop("_transcript", None)
+        d.pop("_ocr_text", None)
         return d
 
 
@@ -186,6 +193,8 @@ def _run_job(job: Job) -> None:
 
         transcript = " ".join(all_transcripts)
         ocr_text   = "\n---\n".join(all_ocr)
+        job._transcript = transcript
+        job._ocr_text   = ocr_text
 
         job.current_step = "summarizing"
         summary = rs.summarize(
@@ -214,6 +223,9 @@ def _run_job(job: Job) -> None:
                     os.remove(path)
                 except OSError:
                     pass
+
+    # Archive the finished job (SQLite + CSV) before notifying anyone
+    storage.persist(job)
 
     # Fire completion callbacks (Phase 2 Telegram bot plugs in here)
     for cb in _completion_callbacks:
@@ -247,6 +259,7 @@ def _worker() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    storage.init(SUMMARY_DB, SUMMARY_CSV)
     threading.Thread(target=_load_models, daemon=True, name="model-loader").start()
     threading.Thread(target=_worker,      daemon=True, name="job-worker").start()
 
