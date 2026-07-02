@@ -26,6 +26,7 @@ import glob
 import importlib.util
 import io
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -298,7 +299,74 @@ def _fetch_instagram_images(url, temp_dir, cookies_file, timeout=30):
     return paths
 
 
-def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None):
+# --------------------------------------------------------------------------
+# Supported sources (URL detection + extraction)
+# --------------------------------------------------------------------------
+
+# Path-aware patterns for the post/video types we can process today. Profile
+# and channel URLs are intentionally excluded — bulk crawling is a later phase.
+_SOURCE_PATTERNS = {
+    "instagram": re.compile(r"instagram\.com/(?:reel|p)/[A-Za-z0-9_\-]+", re.I),
+    "youtube": re.compile(
+        r"(?:youtube\.com/watch\?"
+        r"|youtube\.com/shorts/[A-Za-z0-9_\-]+"
+        r"|youtu\.be/[A-Za-z0-9_\-]+)",
+        re.I,
+    ),
+}
+
+# Full-URL matcher for pulling a link out of arbitrary chat text.
+_URL_IN_TEXT_RE = re.compile(
+    r"https?://(?:www\.|m\.)?(?:"
+    r"instagram\.com/(?:reel|p)/[A-Za-z0-9_\-]+"
+    r"|youtube\.com/watch\?[^\s]*"
+    r"|youtube\.com/shorts/[A-Za-z0-9_\-]+"
+    r"|youtu\.be/[A-Za-z0-9_\-]+"
+    r")[^\s]*",
+    re.I,
+)
+
+
+def detect_platform(url):
+    """Coarse host-based routing: 'instagram' | 'youtube' | None."""
+    u = (url or "").lower()
+    if "instagram.com" in u:
+        return "instagram"
+    if "youtube.com" in u or "youtu.be" in u:
+        return "youtube"
+    return None
+
+
+def is_supported_url(url):
+    """True if the URL is a post/video we can process (not a profile/channel)."""
+    return any(p.search(url or "") for p in _SOURCE_PATTERNS.values())
+
+
+def extract_url(text):
+    """Pull the first supported post/video URL out of a chunk of text."""
+    m = _URL_IN_TEXT_RE.search(text or "")
+    return m.group(0) if m else None
+
+
+class _MediaTooLong(Exception):
+    """Raised from the yt-dlp match filter when a video exceeds the cap."""
+
+
+def _duration_filter(max_seconds):
+    """yt-dlp match_filter that aborts on over-long videos with a clear error."""
+    def _check(info, *, incomplete=False):
+        duration = info.get("duration")
+        if duration and duration > max_seconds:
+            raise _MediaTooLong(
+                f"video is {int(duration // 60)}m long; "
+                f"limit is {max_seconds // 60}m"
+            )
+        return None
+    return _check
+
+
+def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None,
+                  max_duration=None):
     """Download a reel or every slide of a carousel post.
     Returns a list of local file paths (one for reels, multiple for carousels).
 
@@ -313,6 +381,10 @@ def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None
 
     before = set(os.listdir(temp_dir))
     _dl_errors: list[str] = []
+
+    platform = detect_platform(url)
+    # Cookies are Instagram-scoped; don't hand them to other sources.
+    dl_cookies = cookies_file if platform == "instagram" else None
 
     class _Logger:
         def debug(self, msg): pass
@@ -330,26 +402,31 @@ def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None
             "socket_timeout": socket_timeout,
             "logger": _Logger(),
         }
-        if cookies_file and os.path.isfile(cookies_file):
-            opts["cookiefile"] = cookies_file
-        elif cookies_file:
-            log(f"    WARNING: cookies file not found: {cookies_file}")
+        if dl_cookies and os.path.isfile(dl_cookies):
+            opts["cookiefile"] = dl_cookies
+        elif dl_cookies:
+            log(f"    WARNING: cookies file not found: {dl_cookies}")
         return opts
 
     log(f"    downloading: {url}")
-    if cookies_file and os.path.isfile(cookies_file):
-        log(f"    cookies: {cookies_file}")
+    if dl_cookies and os.path.isfile(dl_cookies):
+        log(f"    cookies: {dl_cookies}")
 
-    # Stage 1: yt-dlp — works for video reels and video carousels
+    # Stage 1: yt-dlp — video reels/carousels and YouTube videos/Shorts
     try:
         opts = _base_opts()
         opts["format"] = "best"
+        if max_duration:
+            opts["match_filter"] = _duration_filter(max_duration)
         with YoutubeDL(opts) as ydl:
             ydl.extract_info(url, download=True)
+    except _MediaTooLong as exc:
+        raise ValueError(str(exc)) from None
     except Exception as exc:
-        if "No video formats found" not in str(exc):
+        # Stage 2 fallback is Instagram-only: image-only carousels that yt-dlp
+        # can't handle. Never attempt it for other platforms.
+        if platform != "instagram" or "No video formats found" not in str(exc):
             raise
-        # Stage 2: yt-dlp can't handle image-only posts; use Instagram's API directly
         log("    no video found; downloading images via Instagram API...")
         if not (cookies_file and os.path.isfile(cookies_file)):
             raise FileNotFoundError(
@@ -521,7 +598,7 @@ def summarize(transcript, ocr_text, model, host, max_chars, num_gpu=-1):
     t = transcript.strip()[:max_chars]
     o = ocr_text.strip()[:max_chars]
     if not t and not o:
-        return "- No speech or on-screen text could be extracted from this reel."
+        return "- No speech or on-screen text could be extracted from this post."
 
     import requests
 

@@ -56,6 +56,7 @@ MAX_CHARS      = int(os.getenv("MAX_CHARS",      "6000"))
 DL_ATTEMPTS    = int(os.getenv("DOWNLOAD_ATTEMPTS", "2"))
 DL_TIMEOUT     = int(os.getenv("DOWNLOAD_TIMEOUT",  "30"))
 RETRY_DELAY    = float(os.getenv("RETRY_DELAY",     "2.0"))
+MAX_DURATION   = int(os.getenv("MAX_DURATION",      "1200"))   # cap video length (s); 0 = no limit
 MAX_STORED_JOBS = int(os.getenv("MAX_STORED_JOBS", "200"))
 INSTAGRAM_COOKIES = os.getenv("INSTAGRAM_COOKIES_FILE", "").strip() or None
 PORT           = int(os.getenv("PORT", "8000"))
@@ -167,6 +168,7 @@ def _run_job(job: Job) -> None:
                 job.url, _temp_dir,
                 retries=3, socket_timeout=DL_TIMEOUT,
                 cookies_file=INSTAGRAM_COOKIES,
+                max_duration=MAX_DURATION or None,
             ),
             attempts=DL_ATTEMPTS,
             delay=RETRY_DELAY,
@@ -292,10 +294,12 @@ class SummarizeRequest(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def must_be_instagram_reel(cls, v: str) -> str:
+    def must_be_supported_url(cls, v: str) -> str:
         v = v.strip()
-        if "instagram.com/reel" not in v and "instagram.com/p/" not in v:
-            raise ValueError("URL must be an Instagram Reel link (instagram.com/reel/…)")
+        if not rs.is_supported_url(v):
+            raise ValueError(
+                "URL must be an Instagram reel/post or YouTube video/Shorts link"
+            )
         return v
 
 

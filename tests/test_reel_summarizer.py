@@ -58,6 +58,52 @@ class UrlHelpersTest(unittest.TestCase):
             )
 
 
+class SourceUrlTest(unittest.TestCase):
+    def test_detect_platform(self):
+        self.assertEqual(
+            rs.detect_platform("https://www.instagram.com/reel/ABC/"), "instagram"
+        )
+        self.assertEqual(
+            rs.detect_platform("https://youtu.be/ABC"), "youtube"
+        )
+        self.assertEqual(
+            rs.detect_platform("https://www.youtube.com/watch?v=ABC"), "youtube"
+        )
+        self.assertIsNone(rs.detect_platform("https://example.com/x"))
+
+    def test_is_supported_url_accepts_posts_and_videos(self):
+        for url in (
+            "https://www.instagram.com/reel/ABC/",
+            "https://www.instagram.com/p/ABC/",
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtu.be/dQw4w9WgXcQ",
+            "https://www.youtube.com/shorts/ABC123",
+        ):
+            self.assertTrue(rs.is_supported_url(url), url)
+
+    def test_is_supported_url_rejects_profiles_and_junk(self):
+        for url in (
+            "https://www.instagram.com/some_user/",       # profile, not a post
+            "https://www.youtube.com/@somechannel",       # channel, not a video
+            "https://example.com/watch?v=ABC",
+            "not a url",
+        ):
+            self.assertFalse(rs.is_supported_url(url), url)
+
+    def test_extract_url_pulls_link_from_text(self):
+        self.assertEqual(
+            rs.extract_url("check this out https://youtu.be/ABC123 cool right?"),
+            "https://youtu.be/ABC123",
+        )
+        self.assertEqual(
+            rs.extract_url(
+                "https://www.instagram.com/reel/XYZ/?igsh=abc123 nice"
+            ),
+            "https://www.instagram.com/reel/XYZ/?igsh=abc123",
+        )
+        self.assertIsNone(rs.extract_url("no links here"))
+
+
 class OutputAndRetryTest(unittest.TestCase):
     def test_write_entry_writes_one_complete_block(self):
         out = io.StringIO()
@@ -104,7 +150,7 @@ class OllamaAndSummaryTest(unittest.TestCase):
     def test_summarize_empty_extraction_returns_local_message(self):
         self.assertEqual(
             rs.summarize("", "", "mistral", "http://localhost:11434", 1000),
-            "- No speech or on-screen text could be extracted from this reel.",
+            "- No speech or on-screen text could be extracted from this post.",
         )
 
     def test_check_ollama_unavailable_exits_once(self):

@@ -18,7 +18,6 @@ import asyncio
 import html
 import logging
 import os
-import re
 from collections import defaultdict
 from typing import Optional
 
@@ -32,6 +31,8 @@ from telegram.ext import (
     filters,
 )
 
+import reel_summarizer as rs
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -42,10 +43,6 @@ _ALLOWED: set[int] = set(
     int(x.strip())
     for x in os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
     if x.strip().lstrip("-").isdigit()
-)
-
-_INSTAGRAM_RE = re.compile(
-    r"https?://(?:www\.)?instagram\.com/(?:reel|p)/[A-Za-z0-9_\-]+/?[^\s]*"
 )
 
 # ---------------------------------------------------------------------------
@@ -109,8 +106,9 @@ async def _cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         "<b>ReelDigest Bot</b>\n\n"
-        "Send me any public Instagram Reel or carousel link and I'll send "
-        "back a bullet-point summary, fully processed on your local machine.\n\n"
+        "Send me any public Instagram reel/carousel or YouTube video link and "
+        "I'll send back a bullet-point summary, fully processed on your local "
+        "machine.\n\n"
         "Just paste the URL and I'll handle the rest.\n\n"
         "<b>Commands</b>\n"
         "/last    - check the status of your last job\n"
@@ -261,19 +259,19 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("You are not authorised to use this bot.")
         return
 
-    text  = (update.message.text or "").strip()
-    match = _INSTAGRAM_RE.search(text)
+    text = (update.message.text or "").strip()
+    url  = rs.extract_url(text)
 
-    if not match:
+    if not url:
         await update.message.reply_text(
-            "Please send a public Instagram Reel or carousel link.\n\n"
-            "<i>Example:</i>\n"
-            "<code>https://www.instagram.com/reel/XXXXX/</code>",
+            "Please send a public Instagram reel/post or YouTube video link.\n\n"
+            "<i>Examples:</i>\n"
+            "<code>https://www.instagram.com/reel/XXXXX/</code>\n"
+            "<code>https://youtu.be/XXXXX</code>",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    url     = match.group(0)
     chat_id = update.effective_chat.id
 
     from server import _submit_job, _models_ready, _models_error
