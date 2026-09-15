@@ -22,7 +22,7 @@ from collections import defaultdict
 from typing import Optional
 
 from telegram import Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -70,6 +70,7 @@ async def start(token: str) -> None:
     _app.add_handler(CommandHandler("status",  _cmd_status))
     _app.add_handler(CommandHandler("last",    _cmd_last))
     _app.add_handler(CommandHandler("history", _cmd_history))
+    _app.add_handler(CommandHandler("search",  _cmd_search))
     _app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
 
     await _app.initialize()
@@ -110,10 +111,13 @@ async def _cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "I'll send back a bullet-point summary, fully processed on your local "
         "machine.\n\n"
         "Just paste the URL and I'll handle the rest.\n\n"
+        "Ask me a question instead and I'll search everything you've saved — "
+        "e.g. <i>anything about making an AI youtube channel?</i>\n\n"
         "<b>Commands</b>\n"
         "/last    - check the status of your last job\n"
         "/status  - server health &amp; queue depth\n"
-        "/history - your last 5 completed summaries",
+        "/history - your last 5 completed summaries\n"
+        "/search  - search your saved summaries",
         parse_mode=ParseMode.HTML,
     )
 
@@ -231,7 +235,7 @@ async def _cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     parts = []
     for j in done_jobs:
-        short_url = j["url"].split("?")[0].rstrip("/").split("/")[-1]
+        short_url = _short_name(j["url"])
         parts.append(
             f"<b>{html.escape(short_url)}</b>  <i>({_fmt_elapsed(j['elapsed_s'])})</i>\n"
             f"{html.escape(j['summary'] or '')}"
@@ -240,6 +244,59 @@ async def _cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "\n\n---\n\n".join(parts),
         parse_mode=ParseMode.HTML,
+    )
+
+
+async def _cmd_search(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _is_allowed(update):
+        return
+
+    query = " ".join(ctx.args or []).strip()
+    if not query:
+        await update.message.reply_text(
+            "What should I look for?\n"
+            "<i>Example:</i> <code>/search AI youtube channel</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    await _reply_with_search(update, query)
+
+
+async def _reply_with_search(update: Update, query: str) -> None:
+    """Search the archive and reply with the matches, or say there are none."""
+    import storage
+
+    chat_id = update.effective_chat.id
+    await update.effective_chat.send_action(ChatAction.TYPING)
+
+    # storage.search does blocking IO (Ollama call + SQLite), so keep it off
+    # the event loop or the bot stops responding while it runs.
+    results = await asyncio.to_thread(storage.search, chat_id, query, 5)
+
+    if not results:
+        await update.message.reply_text(
+            "I don't have anything saved about that.\n\n"
+            "I only know about videos you've sent me. Send a link to summarise "
+            "one, or use /history to see your recent summaries.",
+        )
+        return
+
+    parts = []
+    for r in results:
+        summary = (r["summary"] or "").strip()
+        if len(summary) > 500:
+            summary = summary[:500].rstrip() + "..."
+        parts.append(
+            f"<b>{html.escape(_short_name(r['url']))}</b>\n"
+            f"{html.escape(r['url'])}\n"
+            f"{html.escape(summary)}"
+        )
+
+    header = f"Found {len(results)} match{'es' if len(results) > 1 else ''}:\n\n"
+    await update.message.reply_text(
+        header + "\n\n---\n\n".join(parts),
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
     )
 
 
@@ -255,14 +312,11 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
     url  = rs.extract_url(text)
 
+    # No link? Treat it as a question about the archive. Anything genuinely
+    # off-topic falls below the relevance floor and gets the "nothing saved"
+    # reply, which explains what the bot can actually do.
     if not url:
-        await update.message.reply_text(
-            "Please send a public Instagram reel/post or YouTube video link.\n\n"
-            "<i>Examples:</i>\n"
-            "<code>https://www.instagram.com/reel/XXXXX/</code>\n"
-            "<code>https://youtu.be/XXXXX</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await _reply_with_search(update, text)
         return
 
     chat_id = update.effective_chat.id
@@ -338,6 +392,11 @@ async def _send_result(job, chat_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _short_name(url: str) -> str:
+    """Last path segment of a URL — the closest thing a reel has to a title."""
+    return url.split("?")[0].rstrip("/").split("/")[-1]
+
 
 def _fmt_elapsed(seconds: Optional[float]) -> str:
     if seconds is None:

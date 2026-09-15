@@ -276,6 +276,9 @@ def _worker() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     storage.init(SUMMARY_DB, SUMMARY_CSV)
+    threading.Thread(
+        target=storage.backfill_embeddings, daemon=True, name="embed-backfill"
+    ).start()
     threading.Thread(target=_load_models, daemon=True, name="model-loader").start()
     threading.Thread(target=_worker,      daemon=True, name="job-worker").start()
 

@@ -84,6 +84,14 @@ specifically for working preferences, conventions, and Git rules.
 - **Cookies expire periodically** (weeks–months). User must re-export from the
   browser extension. If downloads start failing with auth errors, this is the
   first thing to check.
+- **Archive search needs `ollama pull nomic-embed-text`.** Without it embedding
+  fails, and search silently degrades to keyword-only (by design — it never
+  fails a job). The model needs its `search_query:` / `search_document:`
+  prefixes; without them relevance scores compress and the floors stop
+  separating real questions from small talk.
+- **The search relevance floors in `storage.py` were measured, not guessed**,
+  against the real archive. If you change the embedding model, re-calibrate
+  them — the numbers are model-specific.
 - **CUDA/cuDNN/Vulkan are a known mess on this machine.** Multiple workarounds
   exist (`device="cpu"`, `OLLAMA_NUM_GPU=0`). Don't try to "fix" individual
   pieces — the whole GPU stack needs resolution together (Phase 4).
@@ -96,6 +104,7 @@ specifically for working preferences, conventions, and Git rules.
 | ✅ Done | Phase 2: Telegram bot with push notifications |
 | ✅ Done | Phase 3a: Instagram cookies auth + image carousel support |
 | ✅ Done | `/history` reads saved summaries from SQLite, so they survive a restart (`storage.recent`) |
+| ✅ Done | Archive search: ask the bot "anything about X?" — FTS5 keyword + `nomic-embed-text` embeddings (`storage.search`) |
 | ⏳ Pending | `/last` and the REST `/jobs` endpoints are still in-memory only — they go blank after a restart |
 | ⏳ Pending | Phase 3b: Tailscale setup (phone access from any network) |
 | ⏳ Pending | Phase 4: Fix GPU inference (cuDNN / Vulkan issues) |
