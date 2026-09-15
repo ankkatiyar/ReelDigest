@@ -95,6 +95,8 @@ specifically for working preferences, conventions, and Git rules.
 | ✅ Done | Phase 1: FastAPI server + async job queue |
 | ✅ Done | Phase 2: Telegram bot with push notifications |
 | ✅ Done | Phase 3a: Instagram cookies auth + image carousel support |
+| ✅ Done | `/history` reads saved summaries from SQLite, so they survive a restart (`storage.recent`) |
+| ⏳ Pending | `/last` and the REST `/jobs` endpoints are still in-memory only — they go blank after a restart |
 | ⏳ Pending | Phase 3b: Tailscale setup (phone access from any network) |
 | ⏳ Pending | Phase 4: Fix GPU inference (cuDNN / Vulkan issues) |
 | 🅿️ Parked | Phase 5: Profile analyser — crawl all posts on a profile, meta-summary |
