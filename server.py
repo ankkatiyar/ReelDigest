@@ -87,12 +87,14 @@ class Job:
     _notify:     Optional[Callable] = field(default=None, repr=False, compare=False)
     _transcript: Optional[str] = field(default=None, repr=False, compare=False)
     _ocr_text:   Optional[str] = field(default=None, repr=False, compare=False)
+    _chat_id:    Optional[int] = field(default=None, repr=False, compare=False)
 
     def to_dict(self) -> dict:
         d = asdict(self)
         d.pop("_notify", None)
         d.pop("_transcript", None)
         d.pop("_ocr_text", None)
+        d.pop("_chat_id", None)
         return d
 
 
@@ -359,7 +361,11 @@ def health():
     )
 
 
-def _submit_job(url: str, notify_fn: Optional[Callable] = None) -> Job:
+def _submit_job(
+    url: str,
+    notify_fn: Optional[Callable] = None,
+    chat_id: Optional[int] = None,
+) -> Job:
     """Create, store, and enqueue a job.
 
     Called by both the HTTP endpoint and the Telegram bot so neither
@@ -367,7 +373,10 @@ def _submit_job(url: str, notify_fn: Optional[Callable] = None) -> Job:
     """
     job_id    = uuid.uuid4().hex[:12]
     queue_pos = _job_queue.qsize() + (1 if _active_job_id else 0)
-    job       = Job(job_id=job_id, url=url, queue_position=queue_pos, _notify=notify_fn)
+    job       = Job(
+        job_id=job_id, url=url, queue_position=queue_pos,
+        _notify=notify_fn, _chat_id=chat_id,
+    )
     with _jobs_lock:
         _evict_old_jobs()
         _jobs[job_id] = job

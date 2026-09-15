@@ -216,19 +216,12 @@ async def _cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     chat_id = update.effective_chat.id
-    job_ids = _user_jobs.get(chat_id, [])
 
-    if not job_ids:
-        await update.message.reply_text("No jobs submitted yet.")
-        return
+    import storage
 
-    from server import _jobs, _jobs_lock
-
-    with _jobs_lock:
-        done_jobs = [
-            _jobs[jid] for jid in reversed(job_ids)
-            if jid in _jobs and _jobs[jid].status == "done"
-        ][:5]
+    # Read from the archive, not the in-memory job table, so summaries
+    # survive a server restart.
+    done_jobs = storage.recent(chat_id, limit=5)
 
     if not done_jobs:
         await update.message.reply_text(
@@ -238,10 +231,10 @@ async def _cmd_history(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     parts = []
     for j in done_jobs:
-        short_url = j.url.split("?")[0].rstrip("/").split("/")[-1]
+        short_url = j["url"].split("?")[0].rstrip("/").split("/")[-1]
         parts.append(
-            f"<b>{html.escape(short_url)}</b>  <i>({_fmt_elapsed(j.elapsed_s)})</i>\n"
-            f"{html.escape(j.summary or '')}"
+            f"<b>{html.escape(short_url)}</b>  <i>({_fmt_elapsed(j['elapsed_s'])})</i>\n"
+            f"{html.escape(j['summary'] or '')}"
         )
 
     await update.message.reply_text(
@@ -289,7 +282,7 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 _send_result(job, chat_id), _main_loop
             )
 
-    job = _submit_job(url, notify_fn=_notify)
+    job = _submit_job(url, notify_fn=_notify, chat_id=chat_id)
 
     # Track this job for the user so /last can find it
     _user_jobs[chat_id].append(job.job_id)
