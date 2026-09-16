@@ -15,6 +15,7 @@ Optional env var:
 """
 
 import asyncio
+import contextlib
 import html
 import logging
 import os
@@ -24,6 +25,7 @@ from typing import Optional
 
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
+from telegram.error import InvalidToken
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -58,6 +60,7 @@ _main_loop: Optional[asyncio.AbstractEventLoop] = None
 # no Telegram message reaches it.
 _last_poll_error: Optional[tuple[float, str]] = None
 _token: str = ""   # kept only to redact it from error text before logging
+_last_start_error: Optional[str] = None
 
 # Polling backoff caps at 30s, so during a real outage errors keep arriving at
 # least that often. Nothing for twice that long means we are through again.
@@ -85,12 +88,56 @@ async def start(token: str) -> None:
     _app.add_handler(CommandHandler("search",  _cmd_search))
     _app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _on_message))
 
-    await _app.initialize()
-    await _app.start()
-    await _app.updater.start_polling(
-        drop_pending_updates=True, error_callback=_on_poll_error
-    )
+    try:
+        await _app.initialize()
+        await _app.start()
+        await _app.updater.start_polling(
+            drop_pending_updates=True, error_callback=_on_poll_error
+        )
+    except Exception:
+        # Tear the half-built Application down, or a caller that retries would
+        # leak one open HTTP client per attempt.
+        await _shutdown_partial()
+        raise
     log.info("Telegram bot started and polling.")
+
+
+async def _shutdown_partial() -> None:
+    global _app
+    app, _app = _app, None
+    if app is None:
+        return
+    for step in (app.updater.stop, app.stop, app.shutdown):
+        with contextlib.suppress(Exception):
+            await step()
+
+
+async def start_with_retry(token: str) -> None:
+    """Keep trying until Telegram answers.
+
+    Starting at login races the Wi-Fi coming up, so a single failed attempt
+    must not leave the bot off for the whole session. An invalid token is a
+    config error, not a transient one, so that stops immediately.
+    """
+    global _last_start_error
+    delay = 5.0
+    while True:
+        try:
+            await start(token)
+            _last_start_error = None
+            return
+        except InvalidToken:
+            _last_start_error = "invalid TELEGRAM_TOKEN"
+            log.error("TELEGRAM_TOKEN was rejected - not retrying.")
+            return
+        except Exception as exc:
+            _last_start_error = str(exc).replace(token, "***") if token else str(exc)
+            log.error(
+                "Telegram bot start failed (%s) - retrying in %.0fs.",
+                _last_start_error, delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(300.0, delay * 2)
 
 
 def _on_poll_error(exc: Exception) -> None:
@@ -105,7 +152,11 @@ def _on_poll_error(exc: Exception) -> None:
 def connection_status() -> dict:
     """Whether the bot is currently reaching Telegram, for /status and /health."""
     if _app is None:
-        return {"running": False, "connected": False, "last_error": None}
+        return {
+            "running": False,
+            "connected": False,
+            "last_error": _last_start_error,
+        }
 
     if _last_poll_error is None:
         return {"running": True, "connected": True, "last_error": None}

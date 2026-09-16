@@ -21,6 +21,7 @@ Config (all via environment variables — see .env.example):
     WHISPER_MODEL, OLLAMA_MODEL, OLLAMA_HOST, OLLAMA_NUM_GPU, ...
 """
 
+import asyncio
 import os
 import queue
 import tempfile
@@ -288,27 +289,21 @@ async def lifespan(_app: FastAPI):
 
     global _telegram
 
-    _tg = None
+    telegram_task = None
     _telegram_token = os.getenv("TELEGRAM_TOKEN", "").strip()
     if _telegram_token:
-        import logging
         import bot
-        try:
-            await bot.start(_telegram_token)
-            _tg = _telegram = bot
-        except Exception as exc:
-            # A transient network failure reaching Telegram must not take the
-            # whole API down with it. python-telegram-bot echoes the token back
-            # in some error messages, so redact it before logging.
-            reason = str(exc).replace(_telegram_token, "***")
-            logging.getLogger(__name__).error(
-                "Telegram bot failed to start (%s) - continuing without it.", reason
-            )
+        # Connecting happens in the background: the API must come up whether or
+        # not Telegram is reachable, and at login it often isn't yet.
+        _telegram = bot
+        telegram_task = asyncio.create_task(bot.start_with_retry(_telegram_token))
 
     yield
 
-    if _tg:
-        await _tg.stop()
+    if telegram_task and not telegram_task.done():
+        telegram_task.cancel()
+    if _telegram:
+        await _telegram.stop()
 
 
 app = FastAPI(

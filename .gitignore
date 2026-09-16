@@ -15,6 +15,9 @@ reel_summaries*.csv
 # temp dirs created during runs
 reels_*/
 
+# server log written by the autostart task (may contain reel URLs)
+*.log
+
 # Instagram session cookies (contain auth tokens, never commit)
 instagram_cookies.txt
 *_cookies.txt

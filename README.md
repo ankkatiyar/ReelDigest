@@ -19,6 +19,47 @@ Telegram bot. Runs entirely on your own machine.
 The server starts at `http://0.0.0.0:8000`. The Telegram bot starts
 automatically if `TELEGRAM_TOKEN` is set in `.env`.
 
+## Start automatically at login
+
+A scheduled task named **ReelDigest Server** runs the server hidden in the
+background 30 seconds after you log in, so the bot is always available without
+opening a terminal. The delay lets Ollama (which starts from the Startup
+folder) come up first.
+
+```powershell
+# is it running?
+Get-ScheduledTask -TaskName "ReelDigest Server" | Select-Object State
+Invoke-RestMethod http://127.0.0.1:8001/health | ConvertTo-Json
+
+# start / stop it now
+Start-ScheduledTask -TaskName "ReelDigest Server"
+Stop-ScheduledTask  -TaskName "ReelDigest Server"
+
+# turn autostart off, or back on
+Disable-ScheduledTask -TaskName "ReelDigest Server"
+Enable-ScheduledTask  -TaskName "ReelDigest Server"
+```
+
+Because it runs hidden, its output goes to `reeldigest.log` in the project
+root (gitignored). Each start adds a few lines of PowerShell error-stream
+noise before the real log — harmless.
+
+`Stop-ScheduledTask` sometimes leaves the Python process alive. If port 8001
+is still busy afterwards:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8001 -State Listen |
+    ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+```
+
+To recreate the task from scratch, see the settings that matter: working
+directory `D:\ReelDigest` (the SQLite path is relative), *allow start on
+batteries*, and no execution time limit — otherwise Windows kills it after
+72 hours.
+
+**Don't run it twice.** If the task is already running, `.\start.ps1` in a
+terminal will fail to bind port 8001. Stop the task first.
+
 ## Key files
 
 | File | Purpose |

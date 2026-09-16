@@ -27,6 +27,9 @@ specifically for working preferences, conventions, and Git rules.
   CSV, and serves it back: `recent()` for /history, `search()` for questions
   (FTS5 keyword + `nomic-embed-text` cosine, filtered by relevance floors).
 - **`start.ps1`** — launcher: loads `.env` and runs `server.py` with venv Python.
+  Also run at login by the **"ReelDigest Server"** scheduled task (hidden, 30s
+  delay, logs to `reeldigest.log`). If port 8001 is unexpectedly busy, that
+  task is why — stop it before starting a server by hand.
 - **`tests/`** — unittest-based test suite.
 
 ## Working Preferences
@@ -119,6 +122,7 @@ specifically for working preferences, conventions, and Git rules.
 | ✅ Done | `/status` and `/health` report whether Telegram is actually reachable, so a dropped connection isn't silent |
 | ⏳ Pending | `/last` and the REST `/jobs` endpoints are still in-memory only — they go blank after a restart |
 | 🅿️ Parked | LLM-written answers over search results — deferred until the plain ranked list proves insufficient (costs 30s+ per query on CPU) |
+| ✅ Done | Autostart at login via scheduled task; bot retries until the network is up |
 | ⏳ Pending | Phase 3b: Tailscale setup (phone access from any network) |
 | ⏳ Pending | Phase 4: Fix GPU inference (cuDNN / Vulkan issues) |
 | 🅿️ Parked | Phase 5: Profile analyser — crawl all posts on a profile, meta-summary |
