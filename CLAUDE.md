@@ -20,7 +20,12 @@ specifically for working preferences, conventions, and Git rules.
   models once (`_load_models`). Hardcoded `device="cpu"` due to CUDA/cuDNN
   mismatch.
 - **`bot.py`** — Telegram bot. Starts via FastAPI lifespan in the same process
-  as the server. Commands: /start, /last, /status, /history.
+  as the server. Commands: /start, /last, /status, /history, /search. Non-URL
+  text is routed to search. A startup failure is logged, not fatal — the REST
+  API still comes up.
+- **`storage.py`** — summary archive. Persists every finished job to SQLite +
+  CSV, and serves it back: `recent()` for /history, `search()` for questions
+  (FTS5 keyword + `nomic-embed-text` cosine, filtered by relevance floors).
 - **`start.ps1`** — launcher: loads `.env` and runs `server.py` with venv Python.
 - **`tests/`** — unittest-based test suite.
 
@@ -84,6 +89,12 @@ specifically for working preferences, conventions, and Git rules.
 - **Cookies expire periodically** (weeks–months). User must re-export from the
   browser extension. If downloads start failing with auth errors, this is the
   first thing to check.
+- **A dropped Telegram connection does NOT kill the server.**
+  python-telegram-bot's polling loop retries indefinitely (`max_retries=-1`)
+  and only logs, backing off to a 30s ceiling. A log full of `NetworkError:
+  getaddrinfo failed` next to a dead process means something else killed it —
+  check that before "fixing" resilience that already exists. The real risk is
+  silence, which is why `/status` reports the connection state.
 - **Archive search needs `ollama pull nomic-embed-text`.** Without it embedding
   fails, and search silently degrades to keyword-only (by design — it never
   fails a job). The model needs its `search_query:` / `search_document:`
@@ -105,7 +116,9 @@ specifically for working preferences, conventions, and Git rules.
 | ✅ Done | Phase 3a: Instagram cookies auth + image carousel support |
 | ✅ Done | `/history` reads saved summaries from SQLite, so they survive a restart (`storage.recent`) |
 | ✅ Done | Archive search: ask the bot "anything about X?" — FTS5 keyword + `nomic-embed-text` embeddings (`storage.search`) |
+| ✅ Done | `/status` and `/health` report whether Telegram is actually reachable, so a dropped connection isn't silent |
 | ⏳ Pending | `/last` and the REST `/jobs` endpoints are still in-memory only — they go blank after a restart |
+| 🅿️ Parked | LLM-written answers over search results — deferred until the plain ranked list proves insufficient (costs 30s+ per query on CPU) |
 | ⏳ Pending | Phase 3b: Tailscale setup (phone access from any network) |
 | ⏳ Pending | Phase 4: Fix GPU inference (cuDNN / Vulkan issues) |
 | 🅿️ Parked | Phase 5: Profile analyser — crawl all posts on a profile, meta-summary |
