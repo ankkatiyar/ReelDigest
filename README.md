@@ -16,8 +16,10 @@ Telegram bot. Runs entirely on your own machine.
 .\start.ps1
 ```
 
-The server starts at `http://0.0.0.0:8000`. The Telegram bot starts
-automatically if `TELEGRAM_TOKEN` is set in `.env`.
+The server starts at `http://0.0.0.0:8000`, or whatever `PORT` is set to in
+`.env` — this machine uses `8001`, which is the port the examples below use.
+The Telegram bot starts automatically if `TELEGRAM_TOKEN` is set in `.env`,
+and keeps retrying in the background until it can reach Telegram.
 
 ## Start automatically at login
 
