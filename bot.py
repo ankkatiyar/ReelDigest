@@ -18,6 +18,7 @@ import asyncio
 import html
 import logging
 import os
+import time
 from collections import defaultdict
 from typing import Optional
 
@@ -52,6 +53,16 @@ _ALLOWED: set[int] = set(
 _app: Optional[Application] = None
 _main_loop: Optional[asyncio.AbstractEventLoop] = None
 
+# When polling last failed. python-telegram-bot retries forever and only logs,
+# so without this a lost connection is silent: the server looks healthy while
+# no Telegram message reaches it.
+_last_poll_error: Optional[tuple[float, str]] = None
+_token: str = ""   # kept only to redact it from error text before logging
+
+# Polling backoff caps at 30s, so during a real outage errors keep arriving at
+# least that often. Nothing for twice that long means we are through again.
+_DISCONNECTED_AFTER = 60.0
+
 # Maps chat_id -> list of job_ids submitted by that user (newest last)
 _user_jobs: dict[int, list[str]] = defaultdict(list)
 
@@ -62,8 +73,9 @@ _user_jobs: dict[int, list[str]] = defaultdict(list)
 
 async def start(token: str) -> None:
     """Initialise the bot and start long-polling."""
-    global _app, _main_loop
+    global _app, _main_loop, _token
     _main_loop = asyncio.get_running_loop()
+    _token = token
 
     _app = Application.builder().token(token).build()
     _app.add_handler(CommandHandler("start",   _cmd_start))
@@ -75,8 +87,36 @@ async def start(token: str) -> None:
 
     await _app.initialize()
     await _app.start()
-    await _app.updater.start_polling(drop_pending_updates=True)
+    await _app.updater.start_polling(
+        drop_pending_updates=True, error_callback=_on_poll_error
+    )
     log.info("Telegram bot started and polling.")
+
+
+def _on_poll_error(exc: Exception) -> None:
+    """Record a polling failure. Must not raise — it runs inside PTB's loop."""
+    global _last_poll_error
+    reason = str(exc)
+    if _token:
+        reason = reason.replace(_token, "***")
+    _last_poll_error = (time.monotonic(), reason)
+
+
+def connection_status() -> dict:
+    """Whether the bot is currently reaching Telegram, for /status and /health."""
+    if _app is None:
+        return {"running": False, "connected": False, "last_error": None}
+
+    if _last_poll_error is None:
+        return {"running": True, "connected": True, "last_error": None}
+
+    since = time.monotonic() - _last_poll_error[0]
+    return {
+        "running": True,
+        "connected": since > _DISCONNECTED_AFTER,
+        "last_error": _last_poll_error[1],
+        "seconds_since_last_error": round(since, 1),
+    }
 
 
 async def stop() -> None:
@@ -138,7 +178,17 @@ async def _cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         failed = sum(1 for j in _jobs.values() if j.status == "failed")
         queued = sum(1 for j in _jobs.values() if j.status == "pending")
 
+    conn = connection_status()
+    if conn["connected"]:
+        link = "📡 Telegram: <b>connected</b>"
+    else:
+        link = (
+            "⚠️ Telegram: <b>reconnecting</b> — "
+            f"<code>{html.escape(conn['last_error'] or 'unknown')}</code>"
+        )
+
     lines = [
+        link,
         f"{'✅' if ready else '⏳'} Models: <b>{'ready' if ready else 'loading...'}</b>",
         f"🧠 Whisper: <code>{WHISPER_MODEL}</code>  |  Ollama: <code>{OLLAMA_MODEL}</code>",
         f"📋 Queue: <b>{queued}</b> waiting",

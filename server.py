@@ -117,6 +117,10 @@ _temp_dir              = tempfile.mkdtemp(prefix="reeldigest_")
 # to be notified when a job finishes.  Callbacks run from the worker thread.
 _completion_callbacks: list[Callable[[Job], None]] = []
 
+# The bot module, once it has started — health() asks it whether Telegram is
+# actually reachable. None when the bot is disabled or failed to start.
+_telegram = None
+
 
 def register_completion_callback(fn: Callable[[Job], None]) -> None:
     """Register a function called whenever a job reaches 'done' or 'failed'.
@@ -282,6 +286,8 @@ async def lifespan(_app: FastAPI):
     threading.Thread(target=_load_models, daemon=True, name="model-loader").start()
     threading.Thread(target=_worker,      daemon=True, name="job-worker").start()
 
+    global _telegram
+
     _tg = None
     _telegram_token = os.getenv("TELEGRAM_TOKEN", "").strip()
     if _telegram_token:
@@ -289,7 +295,7 @@ async def lifespan(_app: FastAPI):
         import bot
         try:
             await bot.start(_telegram_token)
-            _tg = bot
+            _tg = _telegram = bot
         except Exception as exc:
             # A transient network failure reaching Telegram must not take the
             # whole API down with it. python-telegram-bot echoes the token back
@@ -360,6 +366,7 @@ def health():
             "queue_depth":   _job_queue.qsize(),
             "active_job_id": _active_job_id,
             "jobs":          counts,
+            "telegram":      _telegram.connection_status() if _telegram else None,
         },
     )
 
