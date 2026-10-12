@@ -195,9 +195,52 @@ your summaries — you see exactly what was saved.
 
 ## CLI mode (bypasses the server)
 
+For headless batch processing without the FastAPI server or Telegram bot, run
+the pipeline directly from the command line:
+
 ```powershell
 .\venv\Scripts\python.exe reel_summarizer.py -i urls.txt -o reel_summaries.txt --device cpu --ollama-num-gpu 0
 ```
+
+### CLI options
+
+| Option | Default | What it does |
+|---|---|---|
+| `-i, --input` | `urls.txt` | Input file, one URL per line |
+| `-o, --output` | `reel_summaries.txt` | Output file |
+| `--whisper-model` | `base` | `tiny`/`base`/`small`/`medium`/`large-v3` — smaller is faster |
+| `--ollama-model` | `mistral` | Any model you've pulled in Ollama |
+| `--device` | `auto` | `auto`/`cpu`/`cuda` for Whisper + OCR |
+| `--ollama-num-gpu` | (env) | Override `OLLAMA_NUM_GPU`. Use `0` to force CPU |
+| `--frame-interval` | `2.0` | Seconds between sampled frames for OCR |
+| `--max-frames` | `60` | Cap on frames OCR'd per reel |
+| `--lang` | `en` | OCR language(s), e.g. `en,es` |
+| `--keep-temp` | off | Keep downloaded videos instead of deleting |
+| `--no-resume` | off | Regenerate everything (overwrite output) |
+| `--preflight-only` | off | Check setup without downloading or processing |
+| `--download-attempts` | `2` | Number of download attempts per reel before skipping |
+| `--download-timeout` | `30` | Download socket timeout in seconds |
+| `--retry-delay` | `2.0` | Seconds between download attempts |
+
+### Examples
+
+Faster run on a slow CPU (smaller models, fewer OCR frames):
+
+```powershell
+.\venv\Scripts\python.exe reel_summarizer.py -i urls.txt --whisper-model tiny --ollama-model phi3 --frame-interval 3
+```
+
+Verify setup before a real run (no downloads, no processing):
+
+```powershell
+.\venv\Scripts\python.exe reel_summarizer.py -i urls.txt --preflight-only
+```
+
+### Resume behavior
+
+By default the tool **skips URLs already present in the output file**, so you
+can stop it (Ctrl+C) and re-run later — finished reels are saved. To start
+fresh, use `--no-resume` or delete the output file.
 
 ## Run tests
 
@@ -229,6 +272,28 @@ your summaries — you see exactly what was saved.
 - **Search returns "nothing saved" for something you did save**: lower
   `SEARCH_SEMANTIC_FLOOR` in `.env` (try `0.55`) and restart. If *every* search
   comes back empty, check `ollama list` includes `nomic-embed-text`.
+
+## Troubleshooting
+
+Common runtime errors and their fixes:
+
+- **"Could not reach Ollama"** — start Ollama (open the desktop app, or run
+  `ollama serve`). Check the configured host in `.env` matches.
+- **"model not found"** — run `ollama pull <model>` for the model you've
+  configured. Default is `mistral`; lighter alternatives are `phi3` or
+  `llama3.2`.
+- **"missing Python package(s)"** — install dependencies with
+  `.\venv\Scripts\python.exe -m pip install -r requirements.txt`. Don't use
+  the system Python.
+- **A reel is skipped or returns "content not available"** — the post is
+  private, deleted, or your Instagram session cookies have expired. Re-export
+  cookies via the browser extension (see the Instagram authentication section).
+- **Temporary network failure** — raise `--download-attempts` or
+  `--download-timeout` (CLI mode) to give downloads more chances.
+- **Downloads suddenly stop working** — Instagram changes their internal API
+  often. Update yt-dlp: `.\venv\Scripts\python.exe -m pip install -U yt-dlp`.
+- **Too slow on CPU** — use `--whisper-model tiny`, a smaller Ollama model
+  (`phi3`), and a larger `--frame-interval` (e.g. `3` or `4`).
 
 ## Hardware
 
