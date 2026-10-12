@@ -106,6 +106,18 @@ specifically for working preferences, conventions, and Git rules.
 - **The search relevance floors in `storage.py` were measured, not guessed**,
   against the real archive. If you change the embedding model, re-calibrate
   them — the numbers are model-specific.
+- **The job temp dir is recreated before every download.** `server.py` makes
+  it once at import, but the server runs for days and Windows temp cleanup
+  (Storage Sense etc.) deletes it. `[WinError 3] ... reeldigest_xxxx` on every
+  job, with the post itself fine, means that `os.makedirs` in `_run_job` went
+  missing. The "private or deleted" hint the bot shows is misleading for it.
+- **The Ollama model comes from `OLLAMA_MODEL` in `.env`**, defaulting to
+  `mistral` in code. This machine runs `gemma4:e4b`. If the pulled model
+  changes, update `.env` and restart — otherwise jobs fail looking for the
+  old default.
+- **`Stop-ScheduledTask` can leave the old Python process holding port 8001**,
+  so the "restart" silently fails to bind. Kill the listener, then start the
+  task (commands in `README.md`).
 - **CUDA/cuDNN/Vulkan are a known mess on this machine.** Multiple workarounds
   exist (`device="cpu"`, `OLLAMA_NUM_GPU=0`). Don't try to "fix" individual
   pieces — the whole GPU stack needs resolution together (Phase 4).
