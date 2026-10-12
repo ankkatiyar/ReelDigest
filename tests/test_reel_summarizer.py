@@ -69,6 +69,12 @@ class SourceUrlTest(unittest.TestCase):
         self.assertEqual(
             rs.detect_platform("https://www.youtube.com/watch?v=ABC"), "youtube"
         )
+        self.assertEqual(
+            rs.detect_platform("https://www.facebook.com/reel/123"), "facebook"
+        )
+        self.assertEqual(
+            rs.detect_platform("https://fb.watch/aBc123/"), "facebook"
+        )
         self.assertIsNone(rs.detect_platform("https://example.com/x"))
 
     def test_is_supported_url_accepts_posts_and_videos(self):
@@ -78,6 +84,11 @@ class SourceUrlTest(unittest.TestCase):
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
             "https://youtu.be/dQw4w9WgXcQ",
             "https://www.youtube.com/shorts/ABC123",
+            "https://www.facebook.com/watch?v=1234567890",
+            "https://www.facebook.com/reel/1234567890",
+            "https://www.facebook.com/share/v/aBc123_-/",
+            "https://web.facebook.com/somepage/videos/1234567890/",
+            "https://fb.watch/aBc123/",
         ):
             self.assertTrue(rs.is_supported_url(url), url)
 
@@ -85,6 +96,7 @@ class SourceUrlTest(unittest.TestCase):
         for url in (
             "https://www.instagram.com/some_user/",       # profile, not a post
             "https://www.youtube.com/@somechannel",       # channel, not a video
+            "https://www.facebook.com/some.person",       # profile, not a video
             "https://example.com/watch?v=ABC",
             "not a url",
         ):
@@ -100,6 +112,10 @@ class SourceUrlTest(unittest.TestCase):
                 "https://www.instagram.com/reel/XYZ/?igsh=abc123 nice"
             ),
             "https://www.instagram.com/reel/XYZ/?igsh=abc123",
+        )
+        self.assertEqual(
+            rs.extract_url("watch this https://fb.watch/aBc123/ lol"),
+            "https://fb.watch/aBc123/",
         )
         self.assertIsNone(rs.extract_url("no links here"))
 

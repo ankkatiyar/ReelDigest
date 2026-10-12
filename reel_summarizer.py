@@ -306,6 +306,15 @@ def _fetch_instagram_images(url, temp_dir, cookies_file, timeout=30):
 
 # Path-aware patterns for the post/video types we can process today. Profile
 # and channel URLs are intentionally excluded — bulk crawling is a later phase.
+# Facebook video/reel URL forms (bare profile links are intentionally excluded).
+_FB_PATH = (
+    r"facebook\.com/(?:watch/?\?v=\d+"
+    r"|reel/\d+"
+    r"|share/[vr]/[A-Za-z0-9_\-]+"
+    r"|[\w.-]+/videos/(?:[\w.-]+/)?\d+)"
+    r"|fb\.watch/[A-Za-z0-9_\-]+"
+)
+
 _SOURCE_PATTERNS = {
     "instagram": re.compile(r"instagram\.com/(?:reel|p)/[A-Za-z0-9_\-]+", re.I),
     "youtube": re.compile(
@@ -314,27 +323,31 @@ _SOURCE_PATTERNS = {
         r"|youtu\.be/[A-Za-z0-9_\-]+)",
         re.I,
     ),
+    "facebook": re.compile(r"(?:" + _FB_PATH + r")", re.I),
 }
 
 # Full-URL matcher for pulling a link out of arbitrary chat text.
 _URL_IN_TEXT_RE = re.compile(
-    r"https?://(?:www\.|m\.)?(?:"
+    r"https?://(?:www\.|m\.|web\.)?(?:"
     r"instagram\.com/(?:reel|p)/[A-Za-z0-9_\-]+"
     r"|youtube\.com/watch\?[^\s]*"
     r"|youtube\.com/shorts/[A-Za-z0-9_\-]+"
     r"|youtu\.be/[A-Za-z0-9_\-]+"
+    r"|" + _FB_PATH +
     r")[^\s]*",
     re.I,
 )
 
 
 def detect_platform(url):
-    """Coarse host-based routing: 'instagram' | 'youtube' | None."""
+    """Coarse host-based routing: 'instagram' | 'youtube' | 'facebook' | None."""
     u = (url or "").lower()
     if "instagram.com" in u:
         return "instagram"
     if "youtube.com" in u or "youtu.be" in u:
         return "youtube"
+    if "facebook.com" in u or "fb.watch" in u:
+        return "facebook"
     return None
 
 
@@ -391,26 +404,28 @@ def _duration_filter(max_seconds):
     return _check
 
 
-def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None,
+def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies=None,
                   max_duration=None):
-    """Download a reel or every slide of a carousel post.
+    """Download a reel/video or every slide of a carousel post.
     Returns a list of local file paths (one for reels, multiple for carousels).
 
-    Uses yt-dlp for video reels/carousels.  Falls back to a direct Instagram
-    API call for image-only carousel posts (yt-dlp raises 'No video formats
-    found!' for those due to a known extractor limitation).
+    Uses yt-dlp for videos (Instagram reels/carousels, YouTube, Facebook).
+    Falls back to a direct Instagram API call for image-only carousel posts
+    (yt-dlp raises 'No video formats found!' for those).
 
-    cookies_file: Netscape-format cookies.txt from a browser logged into
-    Instagram.  Required — Meta disabled anonymous API access.
+    cookies: optional {platform: cookies_file} mapping of Netscape-format
+    cookies.txt exported from a logged-in browser. Instagram requires it;
+    Facebook needs it for login-walled videos. Only the cookies matching the
+    URL's platform are sent to yt-dlp.
     """
     from yt_dlp import YoutubeDL
 
     before = set(os.listdir(temp_dir))
     _dl_errors: list[str] = []
 
+    cookies = cookies or {}
     platform = detect_platform(url)
-    # Cookies are Instagram-scoped; don't hand them to other sources.
-    dl_cookies = cookies_file if platform == "instagram" else None
+    dl_cookies = cookies.get(platform)   # only the matching platform's cookies
 
     class _Logger:
         def debug(self, msg): pass
@@ -454,12 +469,13 @@ def download_reel(url, temp_dir, retries=3, socket_timeout=30, cookies_file=None
         if platform != "instagram" or "No video formats found" not in str(exc):
             raise
         log("    no video found; downloading images via Instagram API...")
-        if not (cookies_file and os.path.isfile(cookies_file)):
+        ig_cookies = cookies.get("instagram")
+        if not (ig_cookies and os.path.isfile(ig_cookies)):
             raise FileNotFoundError(
                 "Image carousel detected but no cookies file available. "
                 "Set INSTAGRAM_COOKIES_FILE in your .env (see .env.example)."
             )
-        _fetch_instagram_images(url, temp_dir, cookies_file, timeout=socket_timeout)
+        _fetch_instagram_images(url, temp_dir, ig_cookies, timeout=socket_timeout)
 
     after = set(os.listdir(temp_dir))
     new_files = sorted(

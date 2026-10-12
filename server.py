@@ -61,6 +61,7 @@ RETRY_DELAY    = float(os.getenv("RETRY_DELAY",     "2.0"))
 MAX_DURATION   = int(os.getenv("MAX_DURATION",      "1200"))   # cap video length (s); 0 = no limit
 MAX_STORED_JOBS = int(os.getenv("MAX_STORED_JOBS", "200"))
 INSTAGRAM_COOKIES = os.getenv("INSTAGRAM_COOKIES_FILE", "").strip() or None
+FACEBOOK_COOKIES  = os.getenv("FACEBOOK_COOKIES_FILE", "").strip() or None
 PORT           = int(os.getenv("PORT", "8000"))
 HOST           = os.getenv("HOST", "0.0.0.0")
 SUMMARY_DB     = os.getenv("SUMMARY_DB",  "reeldigest.db")
@@ -178,7 +179,7 @@ def _run_job(job: Job) -> None:
             lambda: rs.download_reel(
                 job.url, _temp_dir,
                 retries=3, socket_timeout=DL_TIMEOUT,
-                cookies_file=INSTAGRAM_COOKIES,
+                cookies={"instagram": INSTAGRAM_COOKIES, "facebook": FACEBOOK_COOKIES},
                 max_duration=MAX_DURATION or None,
             ),
             attempts=DL_ATTEMPTS,
@@ -330,7 +331,8 @@ class SummarizeRequest(BaseModel):
         v = v.strip()
         if not rs.is_supported_url(v):
             raise ValueError(
-                "URL must be an Instagram reel/post or YouTube video/Shorts link"
+                "URL must be an Instagram reel/post, YouTube video/Shorts, "
+                "or Facebook video/reel link"
             )
         return v
 

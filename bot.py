@@ -198,9 +198,9 @@ async def _cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     await update.message.reply_text(
         "<b>ReelDigest Bot</b>\n\n"
-        "Send me any public Instagram reel/carousel or YouTube video link and "
-        "I'll send back a bullet-point summary, fully processed on your local "
-        "machine.\n\n"
+        "Send me any public Instagram reel/carousel, YouTube video, or Facebook "
+        "video link and I'll send back a bullet-point summary, fully processed "
+        "on your local machine.\n\n"
         "Just paste the URL and I'll handle the rest.\n\n"
         "Ask me a question instead and I'll search everything you've saved — "
         "e.g. <i>anything about making an AI youtube channel?</i>\n\n"
