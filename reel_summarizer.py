@@ -33,6 +33,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 
 # NOTE: heavy dependencies (faster_whisper, easyocr, cv2, yt_dlp, requests)
 # are imported lazily inside the functions that need them. This keeps startup
@@ -346,6 +347,31 @@ def extract_url(text):
     """Pull the first supported post/video URL out of a chunk of text."""
     m = _URL_IN_TEXT_RE.search(text or "")
     return m.group(0) if m else None
+
+
+def post_key(url):
+    """Stable identity of a post, so the same one matches however it was linked.
+
+    Instagram shortcodes and YouTube ids survive tracking params and www/m
+    variants. Anything else falls back to host + path, plus ?v= because
+    Facebook's /watch links identify the video that way.
+    """
+    url = (url or "").strip()
+    m = re.search(r"instagram\.com/(?:reel|p)/([A-Za-z0-9_\-]+)", url, re.I)
+    if m:
+        return f"instagram:{m.group(1)}"
+    m = (
+        re.search(r"youtube\.com/shorts/([A-Za-z0-9_\-]+)", url, re.I)
+        or re.search(r"youtu\.be/([A-Za-z0-9_\-]+)", url, re.I)
+        or re.search(r"youtube\.com/watch\?(?:[^\s#]*&)?v=([A-Za-z0-9_\-]+)", url, re.I)
+    )
+    if m:
+        return f"youtube:{m.group(1)}"
+    parts = urlsplit(url)
+    host = re.sub(r"^(?:www|m|web)\.", "", parts.netloc.lower())
+    key = host + parts.path.rstrip("/")
+    v = parse_qs(parts.query).get("v")
+    return f"{key}?v={v[0]}" if v else key
 
 
 class _MediaTooLong(Exception):

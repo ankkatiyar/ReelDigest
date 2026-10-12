@@ -369,6 +369,20 @@ def health():
     )
 
 
+def _find_active_job(url: str, chat_id: int) -> Optional[Job]:
+    """The chat's pending or running job for the same post as url, if any."""
+    key = rs.post_key(url)
+    with _jobs_lock:
+        for job in _jobs.values():
+            if (
+                job.status in ("pending", "processing")
+                and job._chat_id == chat_id
+                and rs.post_key(job.url) == key
+            ):
+                return job
+    return None
+
+
 def _submit_job(
     url: str,
     notify_fn: Optional[Callable] = None,

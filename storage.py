@@ -29,7 +29,9 @@ import threading
 import numpy as np
 import requests
 
-log = logging.getLogger(__name__)
+import reel_summarizer as rs
+
+log =logging.getLogger(__name__)
 
 _db_path: str = ""
 _csv_path: str = ""
@@ -372,6 +374,37 @@ def search(chat_id: int, query: str, limit: int = 5) -> list[dict]:
     except Exception as exc:
         log.exception("Search failed for %r: %s", query, exc)
         return []
+
+
+def find_done(chat_id: int, url: str):
+    """Return that chat's finished summary of the same post as url, or None.
+
+    Matches on rs.post_key, so a link with different tracking params still
+    hits. Scans the chat's done rows in Python rather than adding a key
+    column — the archive is small and this needs no migration. Never raises.
+    """
+    if not _db_path:
+        return None
+    key = rs.post_key(url)
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT url, summary, elapsed_s, finished_at
+                FROM summaries
+                WHERE status = 'done'
+                  AND (chat_id = ? OR chat_id IS NULL)
+                ORDER BY finished_at DESC
+                """,
+                (chat_id,),
+            ).fetchall()
+        for row in rows:
+            if rs.post_key(row["url"]) == key:
+                return dict(row)
+        return None
+    except Exception as exc:
+        log.exception("Failed to look up %s in the archive: %s", url, exc)
+        return None
 
 
 def recent(chat_id: int, limit: int = 5) -> list[dict]:

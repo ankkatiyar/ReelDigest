@@ -106,6 +106,12 @@ specifically for working preferences, conventions, and Git rules.
 - **The search relevance floors in `storage.py` were measured, not guessed**,
   against the real archive. If you change the embedding model, re-calibrate
   them — the numbers are model-specific.
+- **Reposted links are not reprocessed.** The bot's `_on_message` checks
+  `server._find_active_job` (already queued/running) and `storage.find_done`
+  (already archived) before submitting, both matching on
+  `rs.post_key` — the Instagram shortcode / YouTube id, so tracking params
+  don't defeat it. Failed jobs may retry. The REST `POST /summarize` does
+  not dedupe.
 - **The job temp dir is recreated before every download.** `server.py` makes
   it once at import, but the server runs for days and Windows temp cleanup
   (Storage Sense etc.) deletes it. `[WinError 3] ... reeldigest_xxxx` on every

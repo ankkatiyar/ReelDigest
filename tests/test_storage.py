@@ -108,6 +108,35 @@ class SearchTest(unittest.TestCase):
         self.assertEqual(storage.search(1, "   "), [])
 
 
+class FindDoneTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name)
+        with patch.object(storage, "embed", return_value=DOC):
+            storage.init(str(root / "t.db"), str(root / "t.csv"))
+            storage.persist(_job("DeNq3yzT52d", "a saved summary"))
+
+    def test_same_post_with_tracking_params_is_found(self):
+        hit = storage.find_done(1, "https://www.instagram.com/reel/DeNq3yzT52d/?xtok=abc")
+        self.assertEqual(hit["summary"], "a saved summary")
+
+    def test_unseen_post_is_not_found(self):
+        self.assertIsNone(storage.find_done(1, "https://www.instagram.com/reel/other/"))
+
+    def test_failed_jobs_do_not_count(self):
+        failed = _job("FAILED1", "")
+        failed.status = "failed"
+        with patch.object(storage, "embed", return_value=None):
+            storage.persist(failed)
+        self.assertIsNone(storage.find_done(1, failed.url))
+
+    def test_other_chats_summary_is_not_reused(self):
+        self.assertIsNone(
+            storage.find_done(2, "https://www.instagram.com/reel/DeNq3yzT52d/")
+        )
+
+
 class BackfillTest(unittest.TestCase):
     def test_backfill_embeds_rows_saved_without_a_vector(self):
         with tempfile.TemporaryDirectory() as tmp:

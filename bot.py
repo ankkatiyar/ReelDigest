@@ -422,7 +422,29 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     chat_id = update.effective_chat.id
 
-    from server import _submit_job, _models_ready, _models_error
+    from server import _submit_job, _find_active_job, _models_ready, _models_error
+
+    # Reposting a link must not redo minutes of CPU work: point at the job
+    # already in flight, or replay the archived summary.
+    if _find_active_job(url, chat_id):
+        await update.message.reply_text(
+            "That one is already in the queue — I'll message you when it's ready.\n"
+            "Use /last to check progress."
+        )
+        return
+
+    import storage
+
+    saved = storage.find_done(chat_id, url)
+    if saved:
+        when = (saved["finished_at"] or "")[:10]
+        await update.message.reply_text(
+            f"♻️ <b>Already in your archive</b>"
+            f"{f' (summarised {when})' if when else ''}\n\n"
+            f"{html.escape(saved['summary'] or '')}",
+            parse_mode=ParseMode.HTML,
+        )
+        return
 
     if not _models_ready.is_set():
         await update.message.reply_text("Models are still loading at startup — try again in a moment.")
