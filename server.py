@@ -171,6 +171,9 @@ def _run_job(job: Job) -> None:
         job.started_at = _now()
 
         job.current_step = "downloading"
+        # The server outlives Windows temp cleanup (Storage Sense etc.), which
+        # deletes the dir created at import time.
+        os.makedirs(_temp_dir, exist_ok=True)
         media_paths, retries = rs.run_with_retries(
             lambda: rs.download_reel(
                 job.url, _temp_dir,
