@@ -21,7 +21,8 @@ specifically for working preferences, conventions, and Git rules.
   mismatch.
 - **`bot.py`** — Telegram bot. Starts via FastAPI lifespan in the same process
   as the server. Commands: /start, /last, /status, /history, /search. Non-URL
-  text is routed to search. A startup failure is logged, not fatal — the REST
+  text is routed to search; a message with several links goes to
+  `_queue_batch` (one combined reply). A startup failure is logged, not fatal — the REST
   API still comes up.
 - **`storage.py`** — summary archive. Persists every finished job to SQLite +
   CSV, and serves it back: `recent()` for /history, `search()` for questions
@@ -112,6 +113,15 @@ specifically for working preferences, conventions, and Git rules.
   `rs.post_key` — the Instagram shortcode / YouTube id, so tracking params
   don't defeat it. Failed jobs may retry. The REST `POST /summarize` does
   not dedupe.
+- **The bot keeps the Telegram backlog** (`drop_pending_updates=False`), so
+  links sent while the server was off are processed on startup. Telegram
+  only holds them ~24h; older ones must be forwarded again. Bots can't read
+  chat history, so there is no way to fetch them from code.
+- **Summaries run with `"think": False`** in `summarize()`, paired with a
+  detailed nested-bullet prompt. Measured on `gemma4:e4b` (CPU): thinking
+  on ≈ 5.5 min for the LLM step, off ≈ 2–3 min with richer but slightly
+  noisier output. The user chose speed for now and may switch back — that's
+  just removing the `"think"` line (and maybe raising the 600s timeout).
 - **The job temp dir is recreated before every download.** `server.py` makes
   it once at import, but the server runs for days and Windows temp cleanup
   (Storage Sense etc.) deletes it. `[WinError 3] ... reeldigest_xxxx` on every

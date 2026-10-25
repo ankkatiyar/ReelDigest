@@ -141,8 +141,19 @@ Supported URL patterns:
 | `/history` | Last 5 completed summaries (read from the archive — survives restarts) |
 | `/search` | Search your saved summaries (`/search algo trading`) |
 
-Send any Instagram URL directly to the bot to queue a job. You get a push
-notification when it finishes.
+Send any Instagram, YouTube or Facebook link directly to the bot to queue a
+job. You get a push notification when it finishes.
+
+- **Several links in one message** are all queued. You get one reply that
+  counts what was queued, what was already in your archive (those summaries
+  follow straight away) and what was already in the queue.
+- **Reposting a link doesn't reprocess it.** If it's already archived, the bot
+  replays the saved summary; if it's still running, it says so. Tracking
+  params (`?igsh=`, `?xtok=`...) don't count as a different link.
+- **Links sent while the server was off or the laptop asleep** are picked up
+  when it comes back — but only within ~24 hours, because that's how long
+  Telegram holds undelivered messages. Older ones are gone: forward them to
+  the bot again (select them in the chat → Forward → ReelDigest).
 
 Send anything that **isn't** a link and the bot treats it as a question about
 your archive — see below.
@@ -269,6 +280,15 @@ fresh, use `--no-resume` or delete the output file.
   `/health` show the connection state so the outage isn't silent. If the bot
   seems to ignore you, send `/status`: *reconnecting* means it will resume by
   itself; no reply at all means the process is down.
+- **Summaries run with the model's thinking turned off**: `summarize()` sends
+  `"think": false`. On a thinking model like `gemma4` that cut the LLM step
+  from ~5.5 min to ~2–3 min on CPU; the prompt asks for a detailed, nested
+  summary to make up for it. Thinking on is a little more accurate (fewer
+  OCR-noise slips) — to switch back, drop the `"think"` line in
+  `reel_summarizer.py`.
+- **Ollama "out-of-memory during startup"**: the 9.6 GB model can't load when
+  other services hold the RAM. Free memory (stop other heavy processes) and
+  resend the link.
 - **Search returns "nothing saved" for something you did save**: lower
   `SEARCH_SEMANTIC_FLOOR` in `.env` (try `0.55`) and restart. If *every* search
   comes back empty, check `ollama list` includes `nomic-embed-text`.
