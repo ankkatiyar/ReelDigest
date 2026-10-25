@@ -43,7 +43,7 @@ PROMPT_TEMPLATE = """You summarize Instagram posts (Reels and carousel posts) on
 
 Below is the automatically extracted spoken transcript and on-screen text. For carousel posts with multiple slides the on-screen text from each slide is separated by "---". The extraction can be noisy, duplicated, or contain recognition errors - use your judgment and ignore obvious noise.
 
-Write the summary as 3-6 short bullet points (start each line with "- ") covering: the main topic, any tools / products / people / techniques named, the key claims or advice, and any concrete steps shown. Be specific and factual. Do NOT invent details that are not present in the text. If the content is too sparse to summarize meaningfully, say that in a single bullet.
+Write a detailed summary as bullet points. Start each top-level line with "- " and put supporting details on indented sub-bullets starting with "    * ". Cover: the main topic and the post's central claim; every tool, product, app, website, person or technique named, each with what it is or does; the key claims, numbers and advice; any concrete steps shown, in order; and any call to action (e.g. "comment X to get the link"). Be specific and factual. Do NOT invent details that are not present in the text. If the content is too sparse to summarize meaningfully, say that in a single bullet.
 
 === SPOKEN TRANSCRIPT ===
 {transcript}
@@ -725,6 +725,9 @@ def summarize(transcript, ocr_text, model, host, max_chars, num_gpu=-1):
             "model": model,
             "prompt": prompt,
             "stream": False,
+            # Thinking models (gemma4) otherwise spend ~4x the summary's
+            # tokens reasoning first — minutes per job on CPU.
+            "think": False,
             "options": options,
         },
         timeout=600,
