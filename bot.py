@@ -91,8 +91,10 @@ async def start(token: str) -> None:
     try:
         await _app.initialize()
         await _app.start()
+        # Keep links sent while the laptop was off or asleep. Telegram only
+        # holds them ~24h, and reposts are deduped, so replaying is safe.
         await _app.updater.start_polling(
-            drop_pending_updates=True, error_callback=_on_poll_error
+            drop_pending_updates=False, error_callback=_on_poll_error
         )
     except Exception:
         # Tear the half-built Application down, or a caller that retries would
