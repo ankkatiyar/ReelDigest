@@ -362,6 +362,17 @@ def extract_url(text):
     return m.group(0) if m else None
 
 
+def extract_urls(text):
+    """Every supported post/video URL in text, in order, one per post."""
+    urls, seen = [], set()
+    for m in _URL_IN_TEXT_RE.finditer(text or ""):
+        key = post_key(m.group(0))
+        if key not in seen:
+            seen.add(key)
+            urls.append(m.group(0))
+    return urls
+
+
 def post_key(url):
     """Stable identity of a post, so the same one matches however it was linked.
 

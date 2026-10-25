@@ -413,16 +413,21 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     text = (update.message.text or "").strip()
-    url  = rs.extract_url(text)
+    urls = rs.extract_urls(text)
 
     # No link? Treat it as a question about the archive. Anything genuinely
     # off-topic falls below the relevance floor and gets the "nothing saved"
     # reply, which explains what the bot can actually do.
-    if not url:
+    if not urls:
         await _reply_with_search(update, text)
         return
 
     chat_id = update.effective_chat.id
+
+    if len(urls) > 1:
+        await _queue_batch(update, chat_id, urls)
+        return
+    url = urls[0]
 
     from server import _submit_job, _find_active_job, _models_ready, _models_error
 
@@ -455,13 +460,7 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(f"Model loading failed:\n<code>{html.escape(_models_error)}</code>", parse_mode=ParseMode.HTML)
         return
 
-    def _notify(job):
-        if _app and _main_loop:
-            asyncio.run_coroutine_threadsafe(
-                _send_result(job, chat_id), _main_loop
-            )
-
-    job = _submit_job(url, notify_fn=_notify, chat_id=chat_id)
+    job = _submit_job(url, notify_fn=_notifier(chat_id), chat_id=chat_id)
 
     # Track this job for the user so /last can find it
     _user_jobs[chat_id].append(job.job_id)
@@ -480,6 +479,70 @@ async def _on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"Use /last to check progress. I'll message you when it's ready.",
         parse_mode=ParseMode.HTML,
     )
+
+
+def _notifier(chat_id: int):
+    """Completion callback that hands a finished job back to the bot's loop."""
+    def _notify(job):
+        if _app and _main_loop:
+            asyncio.run_coroutine_threadsafe(
+                _send_result(job, chat_id), _main_loop
+            )
+    return _notify
+
+
+async def _queue_batch(update: Update, chat_id: int, urls: list[str]) -> None:
+    """Handle a message with several links: one summary reply, then any archived summaries."""
+    import storage
+    from server import _submit_job, _find_active_job, _models_ready, _models_error
+
+    in_queue, archived, new = [], [], []
+    for url in urls:
+        if _find_active_job(url, chat_id):
+            in_queue.append(url)
+        elif saved := storage.find_done(chat_id, url):
+            archived.append((url, saved))
+        else:
+            new.append(url)
+
+    not_ready = None
+    if new and not _models_ready.is_set():
+        not_ready = "models are still loading — resend them in a moment"
+    elif new and _models_error:
+        not_ready = f"model loading failed: {_models_error}"
+
+    first = None
+    if not not_ready:
+        for url in new:
+            job = _submit_job(url, notify_fn=_notifier(chat_id), chat_id=chat_id)
+            _user_jobs[chat_id].append(job.job_id)
+            first = first or job
+
+    lines = [f"📥 <b>Got {len(urls)} links</b>\n"]
+    if new and not_ready:
+        lines.append(f"⚠️ {len(new)} not queued: {html.escape(not_ready)}")
+    elif new:
+        ahead = (
+            "starting now" if first.queue_position == 0
+            else f"{first.queue_position} job{'s' if first.queue_position > 1 else ''} ahead"
+        )
+        lines.append(
+            f"⏳ Queued {len(new)} ({ahead}) — I'll send each summary when it's ready."
+        )
+    if archived:
+        lines.append(f"♻️ {len(archived)} already in your archive — summaries below.")
+    if in_queue:
+        lines.append(f"🔁 {len(in_queue)} already in the queue.")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+    for url, saved in archived:
+        when = (saved["finished_at"] or "")[:10]
+        await update.message.reply_text(
+            f"♻️ <b>{html.escape(_short_name(url))}</b>"
+            f"{f' (summarised {when})' if when else ''}\n\n"
+            f"{html.escape(saved['summary'] or '')}",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 # ---------------------------------------------------------------------------

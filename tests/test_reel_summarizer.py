@@ -119,6 +119,23 @@ class SourceUrlTest(unittest.TestCase):
         )
         self.assertIsNone(rs.extract_url("no links here"))
 
+    def test_extract_urls_returns_every_post_once_in_order(self):
+        text = (
+            "https://www.instagram.com/reel/AAA/?xtok=1\n"
+            "and https://youtu.be/BBB?si=x then junk\n"
+            "https://www.facebook.com/share/r/CCC/\n"
+            "https://www.instagram.com/reel/AAA/?igsh=2"
+        )
+        self.assertEqual(
+            rs.extract_urls(text),
+            [
+                "https://www.instagram.com/reel/AAA/?xtok=1",
+                "https://youtu.be/BBB?si=x",
+                "https://www.facebook.com/share/r/CCC/",
+            ],
+        )
+        self.assertEqual(rs.extract_urls("no links here"), [])
+
 
 class VttCaptionTest(unittest.TestCase):
     def test_parse_vtt_cleans_and_dedups_rolling_captions(self):
