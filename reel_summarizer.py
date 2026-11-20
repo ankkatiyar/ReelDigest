@@ -716,7 +716,8 @@ def check_ollama(host, model, require_model=True):
         log("WARNING: " + message.strip().replace("\n", "\n         "))
 
 
-def summarize(transcript, ocr_text, model, host, max_chars, num_gpu=-1):
+def summarize(transcript, ocr_text, model, host, max_chars, num_gpu=-1,
+              retries=2, retry_delay=30):
     """Send the merged text to Ollama and return a bullet-point summary."""
     t = transcript.strip()[:max_chars]
     o = ocr_text.strip()[:max_chars]
@@ -730,19 +731,29 @@ def summarize(transcript, ocr_text, model, host, max_chars, num_gpu=-1):
         options["num_gpu"] = num_gpu
 
     prompt = PROMPT_TEMPLATE.format(transcript=t or "(none)", ocr=o or "(none)")
-    resp = requests.post(
-        f"{host}/api/generate",
-        json={
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            # Thinking models (gemma4) otherwise spend ~4x the summary's
-            # tokens reasoning first — minutes per job on CPU.
-            "think": False,
-            "options": options,
-        },
-        timeout=600,
-    )
+    # A 5xx is usually Ollama failing to load the model for lack of RAM
+    # (gemma4:e4b needs ~9 GB of 16), which clears once memory frees up.
+    # A 404 (model not pulled) or a timeout won't improve, so only 5xx retries.
+    for attempt in range(retries + 1):
+        resp = requests.post(
+            f"{host}/api/generate",
+            json={
+                "model": model,
+                "prompt": prompt,
+                "stream": False,
+                # Thinking models (gemma4) otherwise spend ~4x the summary's
+                # tokens reasoning first — minutes per job on CPU.
+                "think": False,
+                "options": options,
+            },
+            timeout=600,
+        )
+        if resp.status_code < 500 or attempt == retries:
+            break
+        log(f"    ! Ollama returned {resp.status_code}; "
+            f"retrying {attempt + 1}/{retries} in {retry_delay}s...")
+        if retry_delay > 0:
+            time.sleep(retry_delay)
     resp.raise_for_status()
     summary = resp.json().get("response", "").strip()
     return summary or "- (The model returned an empty summary.)"

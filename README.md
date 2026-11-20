@@ -287,8 +287,9 @@ fresh, use `--no-resume` or delete the output file.
   OCR-noise slips) — to switch back, drop the `"think"` line in
   `reel_summarizer.py`.
 - **Ollama "out-of-memory during startup"**: the 9.6 GB model can't load when
-  other services hold the RAM. Free memory (stop other heavy processes) and
-  resend the link.
+  other services hold the RAM. The summary step retries twice, 30s apart, so
+  a brief spike passes on its own. If the job still fails, free memory (stop
+  other heavy processes) and resend the link.
 - **Search returns "nothing saved" for something you did save**: lower
   `SEARCH_SEMANTIC_FLOOR` in `.env` (try `0.55`) and restart. If *every* search
   comes back empty, check `ollama list` includes `nomic-embed-text`.

@@ -217,6 +217,53 @@ class OllamaAndSummaryTest(unittest.TestCase):
             "- No speech or on-screen text could be extracted from this post.",
         )
 
+    def _fake_ollama(self, status_codes):
+        calls = []
+
+        class Response:
+            def __init__(self, status_code):
+                self.status_code = status_code
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError(f"{self.status_code} Error")
+
+            def json(self):
+                return {"response": "- A summary"}
+
+        def post(*_args, **_kwargs):
+            calls.append(1)
+            return Response(status_codes[len(calls) - 1])
+
+        return types.SimpleNamespace(post=post), calls
+
+    def _summarize(self, fake_requests):
+        with patch.dict(sys.modules, {"requests": fake_requests}):
+            return rs.summarize(
+                "hello", "", "gemma4:e4b", "http://localhost:11434", 1000,
+                retries=2, retry_delay=0,
+            )
+
+    def test_summarize_retries_server_error_then_succeeds(self):
+        fake_requests, calls = self._fake_ollama([500, 200])
+
+        self.assertEqual(self._summarize(fake_requests), "- A summary")
+        self.assertEqual(len(calls), 2)
+
+    def test_summarize_gives_up_after_retries(self):
+        fake_requests, calls = self._fake_ollama([500, 500, 500])
+
+        with self.assertRaises(RuntimeError):
+            self._summarize(fake_requests)
+        self.assertEqual(len(calls), 3)
+
+    def test_summarize_does_not_retry_missing_model(self):
+        fake_requests, calls = self._fake_ollama([404])
+
+        with self.assertRaises(RuntimeError):
+            self._summarize(fake_requests)
+        self.assertEqual(len(calls), 1)
+
     def test_check_ollama_unavailable_exits_once(self):
         fake_requests = types.SimpleNamespace(
             get=lambda *_args, **_kwargs: (_ for _ in ()).throw(
