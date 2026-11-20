@@ -128,9 +128,26 @@ specifically for working preferences, conventions, and Git rules.
   job, with the post itself fine, means that `os.makedirs` in `_run_job` went
   missing. The "private or deleted" hint the bot shows is misleading for it.
 - **The Ollama model comes from `OLLAMA_MODEL` in `.env`**, defaulting to
-  `mistral` in code. This machine runs `gemma4:e4b`. If the pulled model
-  changes, update `.env` and restart — otherwise jobs fail looking for the
-  old default.
+  `mistral` in code. This machine runs `gemma4:e4b`, re-chosen 2026-11-21
+  after a head-to-head on 3 archived posts (same prompt, think off, CPU):
+  - `gemma4:e4b`: 29–47s per summary, ~23 tok/s, no invented facts, but
+    copies garbled OCR as-is and names tools less. Its cost is RAM: ~9 GB
+    resident of 16, so loads occasionally fail with Ollama "out-of-memory
+    during startup" (~4% of jobs Jul–Nov). `summarize()` retries 5xx twice,
+    30s apart, for exactly this.
+  - `Qwen3.5:4b`: 36–76s, ~14 tok/s, ~6 GB (16K ctx) to ~8 GB (64K). Names
+    tools from OCR better, but invented details ("Claude (formerly
+    ChatGPT)", a made-up testimonial) — worse for a searchable archive.
+    The fallback if gemma4's RAM use becomes a problem.
+  - `phi4-mini`: fast, but flat bullets and echoes OCR noise.
+  - `qwen3:4b` is the "Thinking 2507" build: ignores `"think": False` and
+    couldn't finish the shortest post in the 600s timeout.
+  The 64K context set in the Ollama app costs gemma4 only ~0.5 GB, so it
+  isn't the cause of its OOMs. If the pulled model changes, update `.env`
+  and restart — otherwise jobs fail looking for the old default.
+- **Ollama models live on `D:\Ollama\models`**, set both as the user env var
+  `OLLAMA_MODELS` and as the Ollama app's own Model location setting — the
+  app's setting overrides the env var.
 - **`Stop-ScheduledTask` can leave the old Python process holding port 8001**,
   so the "restart" silently fails to bind. Kill the listener, then start the
   task (commands in `README.md`).
